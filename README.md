@@ -2,8 +2,8 @@
 
 #### The MicroKernel++ Project is still under development and is open to anyone wishing to contribute, but it is a project undertaken by Stux6 Tech. Contribute!
 
-e-mail : stux6.team@gmail.com
-instagram : stux6redteam
+- e-mail : stux6.team@gmail.com
+- instagram : stux6redteam
 
 
 ### MicroKernel++ — Initial bootstrap (v0.1)
