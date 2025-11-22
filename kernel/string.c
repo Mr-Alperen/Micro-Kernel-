@@ -1,4 +1,5 @@
 #include "string.h"
+#include <stddef.h>
 #include "utils.h"
 
 int strcmp(const char* s1, const char* s2) {
@@ -36,20 +37,29 @@ char* strtok(char* str, const char* delim) {
 }
 
 char* utoa(unsigned int value, char* str, int base) {
+    char *ptr = str, *ptr1 = str, tmp_char;
+    unsigned int tmp_value;
 
     if (base < 2 || base > 36) { *str = '\0'; return str; }
-    char* ptr = str, *ptr1 = str, tmp_char;
-    unsigned int tmp_value;
-    do {
-        tmp_value = value;
+
+    if (value == 0) {
+        *ptr++ = '0';
+        *ptr = '\0';
+        return str;
+    }
+
+    while (value > 0) {
+        tmp_value = value % base;
         value /= base;
-        *ptr++ = "zyxwvutsrqponmlkjihgfedcba9876543210123456789abcdefghijklmnopqrstuvwxyz"[35 + (tmp_value - value * base)];
-    } while (value);
-    if (tmp_value < 0) *ptr++ = '-';
-    *ptr-- = '\0';
-    while(ptr1 < ptr) {
+        *ptr++ = (tmp_value < 10) ? ('0' + tmp_value) : ('A' + (tmp_value - 10));
+    }
+
+    *ptr = '\0';
+    ptr--;
+
+    while (ptr1 < ptr) {
         tmp_char = *ptr;
-        *ptr--= *ptr1;
+        *ptr-- = *ptr1;
         *ptr1++ = tmp_char;
     }
     return str;

@@ -1,6 +1,7 @@
 #include "idt.h"
 #include "io.h"     // Port I/O için (yeni dosya)
 #include "vga.h"    // VGA yazma fonksiyonları için (kernel.c'den taşınacak)
+#include "keyboard.h"
 
 #define IDT_ENTRIES 256
 

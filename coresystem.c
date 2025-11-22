@@ -1,49 +1,24 @@
-/**************************************************************************************************/
-/*                                                                                                */
-/*                                    C O R E S Y S T E M . C                                     */
-/*                                                                                                */
-/*                                     -- IMPERIUM OS v1.0 --                                     */
-/*                                                                                                */
-/*   Author: Alperen ERKAN                                                                       */
-/*   Date:   8 Kasım 2025                                                                         */
-/*                                                                                                */
-/*   Description:                                                                                 */
-/*   Bu anıtsal betik, Imperium OS'nin ana sistem mantığını içerir. Tek bir dosyada, bir işletim    */
-/*   sisteminin çalışması için gereken tüm temel yapıları ve algoritmaları barındırır.             */                                          */
-/*                                                                                                */
-/*   İçerdiği Ana Bileşenler:                                                                     */
-/*   1.  Fiziksel Bellek Yöneticisi (PMM) - Bitmap Allocator                                        */
-/*   2.  Sanal Dosya Sistemi (VFS) ve RamFS Implementasyonu                                         */
-/*   3.  Süreç Kontrol Bloğu (PCB) ve Zamanlayıcı (Scheduler) - Round-Robin                         */
-/*   4.  Sistem Çağrısı (Syscall) Arayüzü                                                          */
-/*   5.  Çekirdek Kabuğu (CoreSH) Komut Yorumlayıcısı                                               */
-/*   6.  Hata Yönetimi ve Kernel Panic Sistemi                                                      */
-/*                                                                                                */
-/**************************************************************************************************/
+/* CoreSystem.c - central kernel helpers (trimmed header to ASCII for toolchain)
+ * Author: Alperen ERKAN
+ * Date: 2025-11-08
+ * Description: Core system helpers and glue. This file contains many
+ * subsystem prototypes and some small utility implementations.
+ */
 
-// Bu betik, bir çekirdek tarafından dahil edilmek üzere tasarlanmıştır.
-// Gerekli temel tanımlamalar ve başlık dosyaları burada yer almalıdır.
-// #include <stdint.h>
-// #include <stddef.h>
-// #include <stdbool.h>
+#include <stdint.h>
+#include <stddef.h>
+#include <string.h>
+#include <stdarg.h>
+
+#include "kernel/utils.h"
+#include "kernel/vga.h"
+#include "kernel/string.h"
 
 // =================================================================================================
 // BÖLÜM 0: TEMEL TİP TANIMLAMALARI VE GLOBAL AYARLAR
 // =================================================================================================
 
-// Standart kütüphane olmadan temel tipleri tanımlıyoruz.
-typedef unsigned int   uint32_t;
-typedef int            int32_t;
-typedef unsigned short uint16_t;
-typedef short          int16_t;
-typedef unsigned char  uint8_t;
-typedef char           int8_t;
-typedef uint32_t       size_t;
-typedef uint32_t       uintptr_t;
-
-#ifndef NULL
-#define NULL ((void*)0)
-#endif
+// Use standard integer and size types from headers included above.
 
 #ifndef true
 #define true 1
@@ -98,16 +73,7 @@ uint8_t inb(uint16_t port);
  * @param len Doldurulacak byte sayısı.
  * @return Hedef bellek adresi.
  */
-void* memset(void* dest, int val, size_t len);
-
-/**
- * @brief Bir bellek alanından diğerine veri kopyalar.
- * @param dest Hedef bellek adresi.
- * @param src Kaynak bellek adresi.
- * @param len Kopyalanacak byte sayısı.
- * @return Hedef bellek adresi.
- */
-void* memcpy(void* dest, const void* src, size_t len);
+// Implementations for memset/memcpy appear later in this file.
 
 
 // --- Çekirdek Günlükleme Sistemi (Kernel Logger) ---
@@ -137,12 +103,111 @@ void kernel_log(log_level_t level, const char* component, const char* message);
  * @param line Hatanın oluştuğu satır.
  * @param regs Hata anındaki işlemci kayıtlarının (register) durumu.
  */
-void kernel_panic(const char* message, const char* file, uint32_t line, void* regs);
+// Forward declaration for registers_t used by kernel_panic prototype
+typedef struct registers registers_t;
+void kernel_panic(const char* message, const char* file, uint32_t line, registers_t* regs);
 
 #define KASSERT(condition, msg) \
     if (!(condition)) { \
         kernel_panic(msg, __FILE__, __LINE__, NULL); \
     }
+
+// Convenience wrapper used by other modules that call `panic("msg")`.
+void panic(const char* msg) {
+    kernel_panic(msg, "<unknown>", 0, NULL);
+}
+
+// Very small atoi implementation (decimal only)
+static int k_atoi(const char* s) {
+    int n = 0;
+    int sign = 1;
+    if (*s == '-') { sign = -1; s++; }
+    while (*s >= '0' && *s <= '9') {
+        n = n * 10 + (*s - '0');
+        s++;
+    }
+    return n * sign;
+}
+
+// Provide standard name used elsewhere
+int atoi(const char* s) { return k_atoi(s); }
+
+// Minimal printf-like for the shell; supports %s, %d, %x, %02x, %08x
+static void shell_printf(const char* fmt, ...) {
+    char buf[512];
+    char* p = buf;
+    va_list ap;
+    va_start(ap, fmt);
+    for (const char* f = fmt; *f && (p - buf) < (int)sizeof(buf) - 1; f++) {
+        if (*f != '%') { *p++ = *f; continue; }
+        f++;
+        int pad = 0;
+        if (*f == '0') {
+            f++;
+            if (*f == '2') pad = 2;
+            if (*f == '8') pad = 8;
+            while (*f >= '0' && *f <= '9') f++; // skip any digits left
+        }
+        char numbuf[32];
+        switch (*f) {
+            case 's': {
+                const char* s = va_arg(ap, const char*);
+                while (*s && (p - buf) < (int)sizeof(buf) - 1) *p++ = *s++;
+                break;
+            }
+            case 'd': {
+                int v = va_arg(ap, int);
+                int len = 0;
+                int neg = v < 0;
+                unsigned int uv = neg ? -v : v;
+                if (uv == 0) numbuf[len++] = '0';
+                while (uv) { numbuf[len++] = '0' + (uv % 10); uv /= 10; }
+                if (neg) numbuf[len++] = '-';
+                for (int i = len - 1; i >= 0; i--) *p++ = numbuf[i];
+                break;
+            }
+            case 'x': {
+                unsigned int v = va_arg(ap, unsigned int);
+                const char* hex = "0123456789abcdef";
+                int started = 0;
+                for (int i = (sizeof(unsigned int) * 2) - 1; i >= 0; i--) {
+                    unsigned int nib = (v >> (i * 4)) & 0xF;
+                    if (nib || started || i == 0) { *p++ = hex[nib]; started = 1; }
+                }
+                break;
+            }
+            case '0': // handled above; fallthrough
+            case '2':
+            case '8': {
+                // pad-handling already advanced f; do hex with padding
+                unsigned int v = va_arg(ap, unsigned int);
+                int width = (*f == '2') ? 2 : ((*f == '8') ? 8 : 0);
+                char tmp[32]; int idx = 0;
+                const char* hex = "0123456789abcdef";
+                for (int i = width - 1; i >= 0; i--) {
+                    unsigned int nib = (v >> (i * 4)) & 0xF;
+                    tmp[idx++] = hex[nib];
+                }
+                for (int i = 0; i < idx; i++) *p++ = tmp[i];
+                break;
+            }
+            case 'c': {
+                char c = (char)va_arg(ap, int);
+                *p++ = c; break;
+            }
+            case '%': {
+                *p++ = '%'; break;
+            }
+            default: {
+                // unknown specifier: just print it
+                *p++ = *f; break;
+            }
+        }
+    }
+    *p = '\0';
+    va_end(ap);
+    write_vga_at(buf, -1, -1, 0x07);
+}
 
 
 /**************************************************************************************************/
@@ -855,7 +920,7 @@ int cmd_lspci(int argc, char* argv[]) {
  */
 int cmd_uptime(int argc, char* argv[]) {
     uint32_t ticks = system_tick_count;
-    uint32_t freq = 1000 / schedulder_quantum_ms; // timer frekansı (hz)
+    uint32_t freq = 1000 / SCHEDULER_QUANTUM_MS; // timer frekansı (hz)
     uint32_t seconds = ticks / freq;
     uint32_t minutes = seconds / 60;
     uint32_t hours = minutes / 60;
@@ -879,15 +944,15 @@ int cmd_top(int argc, char* argv[]) {
     shell_printf("pid\tstate\t\tparent\tname\n");
     shell_printf("---------------------------------------------\n");
     
-    for(int i = 0; i < max_processes; i++) {
+    for(int i = 0; i < MAX_PROCESSES; i++) {
         if (process_table[i]) {
             pcb_t* p = process_table[i];
             const char* state_str;
             switch(p->state) {
-                case process_state_running: state_str = "running"; break;
-                case process_state_ready:   state_str = "ready  "; break;
-                case process_state_sleeping:state_str = "sleeping"; break;
-                case process_state_zombie:  state_str = "zombie "; break;
+                case PROCESS_STATE_RUNNING:  state_str = "running"; break;
+                case PROCESS_STATE_READY:    state_str = "ready  "; break;
+                case PROCESS_STATE_SLEEPING: state_str = "sleeping"; break;
+                case PROCESS_STATE_ZOMBIE:   state_str = "zombie "; break;
                 default:                    state_str = "unknown"; break;
             }
             

@@ -46,7 +46,7 @@ void kernel_main(multiboot_info_t* mbd) {
     void* p3 = pmm_alloc_page();
     hex_to_str((u32)p3, buffer);
     write_vga_at("Page 3 allocated at: ", 11, 2, 0x0A);
-    write_vda_at(buffer, 11, 25, 0x0E);
+    write_vga_at(buffer, 11, 25, 0x0E);
 
     for (;;) {
         asm volatile ("hlt");

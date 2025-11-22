@@ -1,5 +1,6 @@
 #include "shell.h"
 #include "vga.h"
+#include <stddef.h>
 #include "string.h" // Yeni
 #include "pmm.h"    // Yeni
 #include "utils.h"
