@@ -52,4 +52,3 @@ void kernel_main(multiboot_info_t* mbd) {
         asm volatile ("hlt");
     }
 }
-// ... (panic fonksiyonu aynı kalır)
